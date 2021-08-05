@@ -1,0 +1,190 @@
+#### Python Code for pulling 5 year seasonality charts for EIA Stock level data (Crude, Gasoline, Distillate, Jet) ###
+#### The code below saves the files as images, then aggregates them into a pdf, one image per page ####
+
+#Import libraries
+import pandas as pd
+import requests
+import matplotlib.pyplot as plt
+import numpy as np
+from datetime import date
+import matplotlib.ticker as ticker
+import plotly.graph_objects as go
+import os
+from PIL import Image
+from fpdf import FPDF
+
+# Set up model variables
+# API Key from EIA
+api_key = 'abcd1234'
+
+# PADD Names to Label Columns
+# Weekly Crude Stocks by PADD (EIA)
+# official name in EIA Database: U.S. Ending Stocks excluding SPR of Crude Oil, Weekly
+PADD_NAMES = ['Cushing', 'PADD 1','PADD 2','PADD 3','PADD 4','PADD 5']
+PADD_KEY = ['PET.W_EPC0_SAX_YCUOK_MBBL.W','PET.WCESTP11.W','PET.WCESTP21.W','PET.WCESTP31.W','PET.WCESTP41.W','PET.WCESTP51.W']
+
+# Initialize list
+final_data = []
+
+# Choose start and end dates
+startDate = '2016-01-01'
+endDate = '2022-01-01'
+# Pull in data via EIA API
+for i in range(len(PADD_KEY)):
+    url = 'http://api.eia.gov/series/?api_key=' + api_key + '&series_id=' + PADD_KEY[i]
+    
+    r = requests.get(url)
+    json_data = r.json()
+    
+    if r.status_code == 200:
+        print('Success!')
+    else:
+        print('Error')
+    
+    df = pd.DataFrame(json_data.get('series')[0].get('data'), columns = ['Date', PADD_NAMES[i]])
+    df.set_index('Date', drop=True, inplace=True)
+    final_data.append(df)
+#    print(df.head())
+
+#Create final dataframe by concatenating all the df in final_data together
+crude = pd.concat(final_data, axis=1)
+# Create date as datetype datatype
+crude['Year'] = crude.index.astype(str).str[:4]
+crude['Month'] = crude.index.astype(str).str[4:6]
+crude['Day'] = crude.index.astype(str).str[6:]
+crude['Date'] = pd.to_datetime(crude[['Year','Month','Day']])
+crude['Week'] = crude.Date.apply(lambda x: x.weekofyear)
+crude.set_index('Date',drop=True,inplace=True)
+crude.sort_index(inplace=True)
+crude = crude[startDate:endDate]
+crude = crude[crude.Week < 52]
+crude['Total'] = crude['PADD 1'] + crude['PADD 2'] + crude['PADD 3'] + crude['PADD 4'] + crude['PADD 5']
+#print(crude)
+
+# Pivot Table for PADDs and Total
+Cush_pivot = pd.pivot_table(crude, values='Cushing', index=['Week'],
+                    columns=['Year'], aggfunc=np.sum)
+
+p1_pivot = pd.pivot_table(crude, values='PADD 1', index=['Week'],
+                    columns=['Year'], aggfunc=np.sum)
+
+p2_pivot = pd.pivot_table(crude, values='PADD 2', index=['Week'],
+                    columns=['Year'], aggfunc=np.sum)
+
+p3_pivot = pd.pivot_table(crude, values='PADD 3', index=['Week'],
+                    columns=['Year'], aggfunc=np.sum)
+
+p4_pivot = pd.pivot_table(crude, values='PADD 4', index=['Week'],
+                    columns=['Year'], aggfunc=np.sum)
+
+p5_pivot = pd.pivot_table(crude, values='PADD 5', index=['Week'],
+                    columns=['Year'], aggfunc=np.sum)
+
+total_pivot = pd.pivot_table(crude, values='Total', index=['Week'],
+                    columns=['Year'], aggfunc=np.sum)
+# Add max, min, and 5 Year Avg to each plot
+pivot_list = [Cush_pivot, p1_pivot, p2_pivot, p3_pivot, p4_pivot, p5_pivot, total_pivot]
+
+for pivot_choice in pivot_list:
+    pivot_choice['Max'] = pivot_choice.iloc[:,:5].max(axis=1)
+    pivot_choice['Min'] = pivot_choice.iloc[:,:5].min(axis=1)
+    pivot_choice['5 Year Avg'] = pivot_choice.iloc[:,:5].mean(axis=1)
+    
+# SHOWS ALL LINES
+# Set up Figure
+Cush_fig = go.Figure()
+p1_fig = go.Figure()
+p2_fig = go.Figure()
+p3_fig = go.Figure()
+p4_fig = go.Figure()
+p5_fig = go.Figure()
+total_fig = go.Figure()
+
+# Set up lists to iterate through
+fig_list = [Cush_fig, p1_fig, p2_fig, p3_fig, p4_fig, p5_fig, total_fig]
+pivot_list = [Cush_pivot, p1_pivot, p2_pivot, p3_pivot, p4_pivot, p5_pivot, total_pivot]
+title_list = ['Cushing Crude Stocks (kbd)','PADD 1 Crude Stocks (kbd)','PADD 2 Crude Stocks (kbd)','PADD 3 Crude Stocks (kbd)',
+              'PADD 4 Crude Stocks (kbd)','PADD 5 Crude Stocks (kbd)','Total Crude Stocks (kbd)']
+
+# Set the colors for the lines
+colors = ['#17becf','#e377c2','#ff7f0e','#2ca02c','darkblue','firebrick']
+
+# SHOWS ONLY THIS YEAR AND LAST YEAR
+# Set up Figure
+Cush_fig = go.Figure()
+p1_fig = go.Figure()
+p2_fig = go.Figure()
+p3_fig = go.Figure()
+p4_fig = go.Figure()
+p5_fig = go.Figure()
+total_fig = go.Figure()
+
+# Set up lists to iterate through
+fig_list = [Cush_fig, p1_fig, p2_fig, p3_fig, p4_fig, p5_fig, total_fig]
+pivot_list = [Cush_pivot, p1_pivot, p2_pivot, p3_pivot, p4_pivot, p5_pivot, total_pivot]
+title_list = ['Cushing Crude Stocks (kbd)','PADD 1 Crude Stocks (kbd)','PADD 2 Crude Stocks (kbd)','PADD 3 Crude Stocks (kbd)',
+              'PADD 4 Crude Stocks (kbd)','PADD 5 Crude Stocks (kbd)','Total Crude Stocks (kbd)']
+
+# Set the colors for the lines
+colors = ['#17becf','#e377c2','#ff7f0e','#2ca02c','firebrick','darkblue']
+
+# Create the Graphs
+for j in range(7):
+    data = pivot_list[j]
+
+    fig_list[j].add_trace(go.Scatter(y=data['Max'],
+        fill=None,
+        mode=None,
+        line_color='lightgray', showlegend=False
+        ))
+
+    fig_list[j].add_trace(go.Scatter(y=data['Min'],
+        fill='tonexty', # fill area between trace0 and trace1
+        mode=None, line_color='lightgray', showlegend=False))
+
+    fig_list[j].add_trace(go.Scatter(y=data['5 Year Avg'], name='5 Year Avg',
+                                 line=dict(color='black', width=4, dash='dot')))
+
+    for i in [4,5]:
+        fig_list[j].add_trace(go.Scatter(y=data.iloc[:,i], name=data.columns[i],
+                                 line=dict(color=colors[i], width=4)))
+
+    fig_list[j].update_layout(title=title_list[j],
+                       xaxis_title='Week',
+                       yaxis_title='kb/d', template='plotly_white')
+# Show all the graphs
+# Cush_fig.show()
+# p1_fig.show()
+# p2_fig.show()
+# p3_fig.show()
+# p4_fig.show()
+# p5_fig.show()
+# total_fig.show()
+
+Cush_fig.write_image("imageFolder/IMG001.jpeg")
+p1_fig.write_image("imageFolder/IMG002.jpeg")
+p2_fig.write_image("imageFolder/IMG003.jpeg")
+p3_fig.write_image("imageFolder/IMG004.jpeg")
+p4_fig.write_image("imageFolder/IMG005.jpeg")
+p5_fig.write_image("imageFolder/IMG006.jpeg")
+total_fig.write_image("imageFolder/IMG007.jpeg")
+
+pdf = FPDF()
+sdir = "imageFolder/"
+w,h = 5,5
+
+for i in range(1, 8):
+    fname = sdir + "IMG%.3d.jpeg" % i
+    if os.path.exists(fname):
+        if i == 1:
+            cover = Image.open(fname)
+            w,h = cover.size
+            pdf = FPDF(unit = "pt", format = [w,h])
+        image = fname
+        pdf.add_page()
+        pdf.image(image,0,0,w,h)
+    else:
+        print("File not found:", fname)
+    print("processed %d" % i)
+pdf.output("EIA Stock Levels.pdf", "F")
+print("done")
